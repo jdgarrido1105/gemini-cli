@@ -16,9 +16,27 @@ vi.mock('../../contexts/UIStateContext.js');
 const mockUseUIState = vi.mocked(useUIState);
 
 const mockExtensions = [
-  { name: 'ext-one', version: '1.0.0', isActive: true },
-  { name: 'ext-two', version: '2.1.0', isActive: true },
-  { name: 'ext-disabled', version: '3.0.0', isActive: false },
+  {
+    name: 'ext-one',
+    version: '1.0.0',
+    isActive: true,
+    path: '/path/to/ext-one',
+    contextFiles: [],
+  },
+  {
+    name: 'ext-two',
+    version: '2.1.0',
+    isActive: true,
+    path: '/path/to/ext-two',
+    contextFiles: [],
+  },
+  {
+    name: 'ext-disabled',
+    version: '3.0.0',
+    isActive: false,
+    path: '/path/to/ext-disabled',
+    contextFiles: [],
+  },
 ];
 
 describe('<ExtensionsList />', () => {
@@ -53,13 +71,15 @@ describe('<ExtensionsList />', () => {
 
   it('should render "No extensions installed." if there are no extensions', () => {
     mockUIState([], new Map());
-    const { lastFrame } = render(<ExtensionsList />);
+    const { lastFrame } = render(<ExtensionsList extensions={[]} />);
     expect(lastFrame()).toContain('No extensions installed.');
   });
 
   it('should render a list of extensions with their version and status', () => {
     mockUIState(mockExtensions, new Map(), ['ext-disabled']);
-    const { lastFrame } = render(<ExtensionsList />);
+    const { lastFrame } = render(
+      <ExtensionsList extensions={mockExtensions} />,
+    );
     const output = lastFrame();
     expect(output).toContain('ext-one (v1.0.0) - active');
     expect(output).toContain('ext-two (v2.1.0) - active');
@@ -67,8 +87,9 @@ describe('<ExtensionsList />', () => {
   });
 
   it('should display "unknown state" if an extension has no update state', () => {
-    mockUIState([mockExtensions[0]], new Map());
-    const { lastFrame } = render(<ExtensionsList />);
+    const { lastFrame } = render(
+      <ExtensionsList extensions={[mockExtensions[0]]} />,
+    );
     expect(lastFrame()).toContain('(unknown state)');
   });
 
@@ -103,7 +124,9 @@ describe('<ExtensionsList />', () => {
     it(`should correctly display the state: ${state}`, () => {
       const updateState = new Map([[mockExtensions[0].name, state]]);
       mockUIState([mockExtensions[0]], updateState);
-      const { lastFrame } = render(<ExtensionsList />);
+      const { lastFrame } = render(
+        <ExtensionsList extensions={[mockExtensions[0]]} />,
+      );
       expect(lastFrame()).toContain(expectedText);
     });
   }

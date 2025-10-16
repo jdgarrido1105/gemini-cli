@@ -1,0 +1,111 @@
+Design Doc: Decoupled Slash Command Architecture
+
+## 1. Goal
+
+To refactor the Gemini CLI's slash command architecture to enable command logic to be reused by multiple clients, starting with the A2A (Agent-to-Agent) server for consumption by the Gemini Code Assist IDE extension.
+
+## 2. Background & Future Possibilities
+
+Currently, slash command logic is tightly coupled with the interactive terminal UI, making it unusable in other environments. The immediate goal is to expose this functionality via an A2A server for clients like the GCA IDE extension.
+
+A compelling future possibility is for slash commands to evolve into **Tools** that can be called by the Language Model. This would allow users to invoke complex actions using natural language. However, fully committing to this "Tools vision" now is not feasible due to client-side resource constraints and the risks associated with a major architectural change before the Gemini CLI 1.0 launch.
+
+Therefore, this document proposes a pragmatic, short-term solution. By focusing on simple logic extraction rather than a more opinionated abstraction, we solve the immediate problem of code reuse while keeping our architectural options open for the future.
+
+## 3. Proposed Design
+
+The core principle is to extract the essential logic of each slash command into a UI-agnostic function in the `@google/generative-ai/core` package. This allows different clients (the interactive CLI, the A2A server) to call the same core logic and handle the presentation of the result independently.
+
+### 3.1. Core Logic Extraction
+
+For each command required by the A2A server, its business logic will be refactored out of the CLI's presentation layer and into a dedicated, exportable function in the `core` library. These functions will be pure, testable, and will return a structured, serializable result.
+
+### 3.2. The `CommandResult` Data Contract
+
+To ensure a consistent and predictable data contract between the core logic and its clients, the functions will return a `CommandResult` object. This is a discriminated union that standardizes the output for different types of command outcomes.
+
+```typescript
+// In: packages/core/src/commands/types.ts
+export type CommandResult =
+  | StructuredDataResult
+  | TextResult
+  | ContinuationResult
+  | ErrorResult;
+
+// ... (The rest of the CommandResult definitions remain the same)
+```
+
+### 3.3. Client-Server API Contract
+
+The A2A server will expose a simple REST API for clients. This API contract remains stable.
+
+*   **Command Discovery:** `GET /commands`
+    *   Returns a JSON tree of all available commands, allowing clients to build features like autocompletion.
+*   **Command Execution:** `POST /execute`
+    *   Accepts a JSON payload with the command to run.
+    *   It invokes the corresponding core logic function and returns the resulting `CommandResult` object as a JSON response.
+
+## 4. Command Migration Plan
+
+The initial set of commands required for the A2A server will be migrated to this new architecture.
+
+| Command       | Structure                        | Core Logic & Result Type(s)                                                                                             |
+|---------------|----------------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| `/tools`      | Single Command                   | Lists tools from `ToolRegistry`. Returns: `StructuredDataResult`.                                                       |
+| `/about`      | Single Command                   | Retrieves package version info. Returns: `StructuredDataResult`.                                                        |
+| `/memory`     | Parent + Subcommands             | Each subcommand has a focused action. Returns: `TextResult` or `StructuredDataResult`.                                  |
+| `/extensions` | Parent + Subcommands             | Logic is handled by `ExtensionService`. Returns: `StructuredDataResult` for `list`, `TextResult` for others.            |
+| `/mcp`        | Parent + Subcommands             | Manages MCP server configuration in settings. Returns: `StructuredDataResult` for `list`, `TextResult` for others.      |
+| `/restore`    | Single Command (Interactive)     | Lists checkpoints. Returns: `ContinuationResult` with a `selection` prompt, which calls a hidden `/__restore_reply` command. |
+| `/init`       | Single Command (Interactive)     | A multi-step dialogue. Returns: A chain of `ContinuationResult` objects, ending with a `TextResult`.                      |
+
+## 5. Alternatives Considered
+
+### 5.1. Alternative: Formal Command Abstraction in Core
+
+An alternative considered was to define a formal `SlashCommand` interface in the core library, creating a rigid, hierarchical structure for all commands.
+
+*   **Pros:** Enforces a consistent structure for all commands, potentially simplifying client-side discovery and execution logic.
+*   **Cons:** This abstraction may be overly complex for the immediate need and could conflict with a future "Tools" vision, leading to wasted effort. It introduces a new layer of indirection that may need to be unwound later.
+*   **Conclusion:** Rejected as the primary path for now. The proposed design of simply extracting logic is more direct and flexible, while still allowing for the use of shared `CommandResult` types.
+
+### 5.2. Alternative: Direct Re-implementation in A2A Server
+
+This approach involves rewriting the logic for the required commands directly within the A2A server, leaving the existing CLI implementation untouched.
+
+*   **Pros:** Faster initial implementation; no risk of regressing existing CLI functionality.
+*   **Cons:** Introduces significant code duplication and a high long-term maintenance burden. It creates a high risk of behavioral divergence between clients and does not offer a scalable solution.
+*   **Conclusion:** Rejected. The long-term costs of technical debt and inconsistent user experience outweigh the short-term benefits.
+
+## 6. Benefits of Proposed Design
+
+*   **Pragmatic & Low-Risk:** Achieves the immediate goal of code reuse for the A2A server without introducing risky, large-scale abstractions before a major launch.
+*   **Provides Future Flexibility:** Decoupling logic is a valuable step that supports future evolution, whether that involves a tool-based architecture or another path, without prematurely committing.
+*   **Clear Separation of Concerns:** Core logic is fully decoupled from UI presentation.
+*   **Enhanced Testability:** Core logic can be unit-tested as pure functions.
+
+## 7. Roadmap
+
+The project will be executed in phases. The "migration" of a command involves: refactoring its logic into the core library, connecting it to the A2A server, verifying its functionality in the GCA client, and finally, refactoring the original CLI command to use the new core function to eliminate technical debt.
+
+### Phase 1: Foundation (Until October 24th)
+*   **Owner:** Juanda
+*   **Tasks:**
+    *   Define the `CommandResult` types in the core library.
+    *   Implement the A2A server API (`GET /commands`, `POST /execute`).
+    *   Migrate `/extensions list` as the first example to validate the end-to-end flow.
+
+### Phase 2: Parallel Command Migration (Starts October 27th)
+*   **`/restore`**
+    *   **Owner:** Juanda
+    *   **Estimate:** 3 weeks
+*   **`/init`**
+    *   **Owner:** Coco
+    *   **Estimate:** 2 weeks
+*   **`/memory`**
+    *   **Owner:** Alisa
+    *   **Estimate:** 2 weeks
+
+### Phase 3: Low Priority Migration
+*   **Commands:** `/tools`, `/about`, `/mcp`
+*   **Priority:** These are the lowest priority because their functionality is already substantially implemented in the GCA language server, reducing the immediate need for reuse.

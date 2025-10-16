@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getErrorMessage } from '@google/gemini-cli-core';
+import { refreshMemoryLogic, showMemoryLogic } from '@google/gemini-cli-core';
 import { MessageType } from '../types.js';
-import { loadHierarchicalGeminiMemory } from '../../config/config.js';
 import type { SlashCommand, SlashCommandActionReturn } from './types.js';
 import { CommandKind } from './types.js';
 
@@ -20,21 +19,21 @@ export const memoryCommand: SlashCommand = {
       description: 'Show the current memory contents.',
       kind: CommandKind.BUILT_IN,
       action: async (context) => {
-        const memoryContent = context.services.config?.getUserMemory() || '';
-        const fileCount = context.services.config?.getGeminiMdFileCount() || 0;
+        const result = showMemoryLogic({
+          userMemory: context.services.config?.getUserMemory() || '',
+          geminiMdFileCount:
+            context.services.config?.getGeminiMdFileCount() || 0,
+        });
 
-        const messageContent =
-          memoryContent.length > 0
-            ? `Current memory content from ${fileCount} file(s):\n\n---\n${memoryContent}\n---`
-            : 'Memory is currently empty.';
-
-        context.ui.addItem(
-          {
-            type: MessageType.INFO,
-            text: messageContent,
-          },
-          Date.now(),
-        );
+        for (const msg of result.messages) {
+          context.ui.addItem(
+            {
+              type: MessageType.INFO,
+              text: msg.message,
+            },
+            Date.now(),
+          );
+        }
       },
     },
     {
@@ -78,51 +77,50 @@ export const memoryCommand: SlashCommand = {
           Date.now(),
         );
 
-        try {
-          const config = await context.services.config;
-          const settings = context.services.settings;
-          if (config) {
-            const { memoryContent, fileCount, filePaths } =
-              await loadHierarchicalGeminiMemory(
-                config.getWorkingDir(),
-                config.shouldLoadMemoryFromIncludeDirectories()
-                  ? config.getWorkspaceContext().getDirectories()
-                  : [],
-                config.getDebugMode(),
-                config.getFileService(),
-                settings.merged,
-                config.getExtensionContextFilePaths(),
-                config.isTrustedFolder(),
-                settings.merged.context?.importFormat || 'tree',
-                config.getFileFilteringOptions(),
-              );
-            config.setUserMemory(memoryContent);
-            config.setGeminiMdFileCount(fileCount);
-            config.setGeminiMdFilePaths(filePaths);
-            context.ui.setGeminiMdFileCount(fileCount);
-
-            const successMessage =
-              memoryContent.length > 0
-                ? `Memory refreshed successfully. Loaded ${memoryContent.length} characters from ${fileCount} file(s).`
-                : 'Memory refreshed successfully. No memory content found.';
-
-            context.ui.addItem(
-              {
-                type: MessageType.INFO,
-                text: successMessage,
-              },
-              Date.now(),
-            );
-          }
-        } catch (error) {
-          const errorMessage = getErrorMessage(error);
+        const config = await context.services.config;
+        const settings = context.services.settings;
+        if (!config) {
           context.ui.addItem(
             {
               type: MessageType.ERROR,
-              text: `Error refreshing memory: ${errorMessage}`,
+              text: 'Error refreshing memory: Config not available',
             },
             Date.now(),
           );
+          return;
+        }
+
+        const result = await refreshMemoryLogic({
+          workingDir: config.getWorkingDir(),
+          includeDirs: config.shouldLoadMemoryFromIncludeDirectories()
+            ? config.getWorkspaceContext().getDirectories()
+            : [],
+          debugMode: config.getDebugMode(),
+          fileService: config.getFileService(),
+          extensionContextFilePaths: config.getExtensionContextFilePaths(),
+          isTrustedFolder: config.isTrustedFolder(),
+          importFormat: settings.merged.context?.importFormat || 'tree',
+          fileFilteringOptions: config.getFileFilteringOptions(),
+          discoveryMaxDirs: settings.merged.context?.discoveryMaxDirs,
+        });
+
+        const now = Date.now();
+        for (const msg of result.messages) {
+          context.ui.addItem(
+            {
+              type: msg.severity,
+              text: msg.message,
+            },
+            now,
+          );
+        }
+
+        if (result.data) {
+          const { memoryContent, fileCount, filePaths } = result.data;
+          config.setUserMemory(memoryContent);
+          config.setGeminiMdFileCount(fileCount);
+          config.setGeminiMdFilePaths(filePaths);
+          context.ui.setGeminiMdFileCount(fileCount);
         }
       },
     },

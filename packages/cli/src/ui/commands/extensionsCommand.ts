@@ -6,20 +6,32 @@
 
 import type { ExtensionUpdateInfo } from '../../config/extension.js';
 import { getErrorMessage } from '../../utils/errors.js';
-import { MessageType } from '../types.js';
+import { MessageType, type HistoryItemExtensionsList } from '../types.js';
 import {
   type CommandContext,
   type SlashCommand,
   CommandKind,
 } from './types.js';
+import {
+  extensionsListLogic,
+  type ExtensionsListContext,
+} from '@google/gemini-cli-core';
 
 async function listAction(context: CommandContext) {
-  context.ui.addItem(
-    {
-      type: MessageType.EXTENSIONS_LIST,
-    },
-    Date.now(),
-  );
+  const listContext: ExtensionsListContext = {
+    getExtensions: () => context.services.config!.getExtensions(),
+  };
+  const result = extensionsListLogic(listContext);
+
+  if (result.data?.extensions) {
+    context.ui.addItem(
+      {
+        type: MessageType.EXTENSIONS_LIST,
+        extensions: result.data.extensions,
+      } as HistoryItemExtensionsList,
+      Date.now(),
+    );
+  }
 }
 
 function updateAction(context: CommandContext, args: string): Promise<void> {
@@ -64,6 +76,7 @@ function updateAction(context: CommandContext, args: string): Promise<void> {
   try {
     context.ui.setPendingItem({
       type: MessageType.EXTENSIONS_LIST,
+      extensions: [],
     });
 
     context.ui.dispatchExtensionStateUpdate({

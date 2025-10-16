@@ -11,6 +11,12 @@ export * from './output/json-formatter.js';
 export * from './policy/types.js';
 export * from './policy/policy-engine.js';
 
+// Export command results and logic
+export * from './commands/results.js';
+export * from './commands/init.js';
+export * from './commands/memory.js';
+export * from './commands/extensions.js';
+
 // Export Core Logic
 export * from './core/client.js';
 export * from './core/contentGenerator.js';

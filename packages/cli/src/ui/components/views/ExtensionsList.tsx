@@ -7,14 +7,18 @@
 import { Box, Text } from 'ink';
 import { useUIState } from '../../contexts/UIStateContext.js';
 import { ExtensionUpdateState } from '../../state/extensions.js';
+import type { GeminiCLIExtension } from '@google/gemini-cli-core';
 
-export const ExtensionsList = () => {
-  const { commandContext, extensionsUpdateState } = useUIState();
-  const allExtensions = commandContext.services.config!.getExtensions();
+interface ExtensionsList {
+  extensions: readonly GeminiCLIExtension[];
+}
+
+export const ExtensionsList: React.FC<ExtensionsList> = ({ extensions }) => {
+  const { extensionsUpdateState, commandContext } = useUIState();
   const settings = commandContext.services.settings;
   const disabledExtensions = settings.merged.extensions?.disabled ?? [];
 
-  if (allExtensions.length === 0) {
+  if (extensions.length === 0) {
     return <Text>No extensions installed.</Text>;
   }
 
@@ -22,7 +26,7 @@ export const ExtensionsList = () => {
     <Box flexDirection="column" marginTop={1} marginBottom={1}>
       <Text>Installed extensions:</Text>
       <Box flexDirection="column" paddingLeft={2}>
-        {allExtensions.map((ext) => {
+        {extensions.map((ext) => {
           const state = extensionsUpdateState.get(ext.name);
           const isActive = !disabledExtensions.includes(ext.name);
           const activeString = isActive ? 'active' : 'disabled';

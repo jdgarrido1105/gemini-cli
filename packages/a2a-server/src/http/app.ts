@@ -16,6 +16,23 @@ import type { AgentSettings } from '../types.js';
 import { GCSTaskStore, NoOpTaskStore } from '../persistence/gcs.js';
 import { CoderAgentExecutor } from '../agent/executor.js';
 import { requestStorage } from './requestStorage.js';
+import {
+  type Config,
+  type InitCommandContext,
+  initCommandLogic,
+  type RefreshMemoryContext,
+  refreshMemoryLogic,
+  type ShowMemoryContext,
+  showMemoryLogic,
+  type ExtensionsListContext,
+  extensionsListLogic,
+} from '@google/gemini-cli-core';
+import { loadConfig, loadEnvironment, setTargetDir } from '../config/config.js';
+import { loadSettings } from '../config/settings.js';
+import { loadExtensions } from '../config/extension.js';
+
+// This will hold the single, shared config for the server.
+let sharedConfig: Config;
 
 const coderAgentCard: AgentCard = {
   name: 'Gemini SDLC Agent',
@@ -61,7 +78,13 @@ export function updateCoderAgentCardUrl(port: number) {
 
 export async function createApp() {
   try {
-    // loadEnvironment() is called within getConfig now
+    // Load the server configuration once on startup.
+    const workspaceRoot = setTargetDir(undefined);
+    loadEnvironment();
+    const settings = loadSettings(workspaceRoot);
+    const extensions = loadExtensions(workspaceRoot);
+    sharedConfig = await loadConfig(settings, extensions, 'a2a-server');
+
     const bucketName = process.env['GCS_BUCKET_NAME'];
     let taskStoreForExecutor: TaskStore;
     let taskStoreForHandler: TaskStore;
@@ -94,6 +117,76 @@ export async function createApp() {
     const appBuilder = new A2AExpressApp(requestHandler);
     expressApp = appBuilder.setupRoutes(expressApp, '');
     expressApp.use(express.json());
+
+    expressApp.post('/commands/init', async (req, res) => {
+      try {
+        const context: InitCommandContext = {
+          targetDir: sharedConfig.getTargetDir(),
+        };
+        const result = await initCommandLogic(context);
+        return res.status(200).json(result);
+      } catch (e) {
+        logger.error('Error executing /commands/init:', e);
+        return res.status(500).json({ error: (e as Error).message });
+      }
+    });
+
+    expressApp.post('/commands/memory/show', async (req, res) => {
+      try {
+        const context: ShowMemoryContext = {
+          userMemory: sharedConfig.getUserMemory(),
+          geminiMdFileCount: sharedConfig.getGeminiMdFileCount(),
+        };
+        const result = await showMemoryLogic(context);
+        return res.status(200).json(result);
+      } catch (e) {
+        logger.error('Error executing /commands/memory/show:', e);
+        return res.status(500).json({ error: (e as Error).message });
+      }
+    });
+
+    expressApp.post('/commands/memory/refresh', async (req, res) => {
+      try {
+        const context: RefreshMemoryContext = {
+          workingDir: sharedConfig.getWorkingDir(),
+          includeDirs: sharedConfig.getWorkspaceContext().getDirectories(),
+          debugMode: sharedConfig.getDebugMode(),
+          fileService: sharedConfig.getFileService(),
+          extensionContextFilePaths:
+            sharedConfig.getExtensionContextFilePaths(),
+          isTrustedFolder: sharedConfig.isTrustedFolder(),
+          importFormat: 'tree', // TODO: Get from settings
+          fileFilteringOptions: sharedConfig.getFileFilteringOptions(),
+          discoveryMaxDirs: 200, // TODO: Get from settings
+        };
+        const result = await refreshMemoryLogic(context);
+
+        if (result.data) {
+          const { memoryContent, fileCount, filePaths } = result.data;
+          sharedConfig.setUserMemory(memoryContent);
+          sharedConfig.setGeminiMdFileCount(fileCount);
+          sharedConfig.setGeminiMdFilePaths(filePaths);
+        }
+
+        return res.status(200).json(result);
+      } catch (e) {
+        logger.error('Error executing /commands/memory/refresh:', e);
+        return res.status(500).json({ error: (e as Error).message });
+      }
+    });
+
+    expressApp.post('/commands/extensions/list', async (req, res) => {
+      try {
+        const context: ExtensionsListContext = {
+          getExtensions: () => sharedConfig.getExtensions(),
+        };
+        const result = await extensionsListLogic(context);
+        return res.status(200).json(result);
+      } catch (e) {
+        logger.error('Error executing /commands/extensions/list:', e);
+        return res.status(500).json({ error: (e as Error).message });
+      }
+    });
 
     expressApp.post('/tasks', async (req, res) => {
       try {
