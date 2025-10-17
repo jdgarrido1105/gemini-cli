@@ -25,6 +25,7 @@ describe('extensionsCommand', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    mockGetExtensions.mockReturnValue([]);
     mockContext = createMockCommandContext({
       services: {
         config: {

@@ -9,7 +9,6 @@ import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { useUIState } from '../../contexts/UIStateContext.js';
 import { ExtensionUpdateState } from '../../state/extensions.js';
 import { ExtensionsList } from './ExtensionsList.js';
-import { createMockCommandContext } from '../../../test-utils/mockCommandContext.js';
 
 vi.mock('../../contexts/UIStateContext.js');
 
@@ -22,6 +21,7 @@ const mockExtensions = [
     isActive: true,
     path: '/path/to/ext-one',
     contextFiles: [],
+    id: '',
   },
   {
     name: 'ext-two',
@@ -29,6 +29,7 @@ const mockExtensions = [
     isActive: true,
     path: '/path/to/ext-two',
     contextFiles: [],
+    id: '',
   },
   {
     name: 'ext-disabled',
@@ -36,6 +37,7 @@ const mockExtensions = [
     isActive: false,
     path: '/path/to/ext-disabled',
     contextFiles: [],
+    id: '',
   },
 ];
 

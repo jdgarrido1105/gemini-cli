@@ -156,7 +156,9 @@ export async function createApp() {
         return res.status(200).json(result);
       } catch (e) {
         logger.error('Error executing /executeCommand:', e);
-        return res.status(500).json({ error: (e as Error).message });
+        const errorMessage =
+          e instanceof Error ? e.message : 'Unknown error executing command';
+        return res.status(500).json({ error: errorMessage });
       }
     });
 
